@@ -1,0 +1,12 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "Gearboy native entry module (ArkTS shell + C++ core via NAPI).",
+  "main": "",
+  "types": "",
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "libgearboy.so": "file:./src/main/cpp/types/libgearboy"
+  }
+}

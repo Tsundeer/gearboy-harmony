@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Gearboy Game Boy emulator module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Gearboy Game Boy / Game Boy Color emulator"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Gearboy"
+    }
+  ]
+}

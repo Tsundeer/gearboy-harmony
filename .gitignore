@@ -1,0 +1,13 @@
+/node_modules
+**/oh_modules/
+/.preview
+**/.hvigor/
+/.idea
+**/build
+**/.cxx
+*.hap
+*.har
+*.tgz
+*.zip
+*.log
+.DS_Store

@@ -1,0 +1,32 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "gb_dark",
+      "value": "#1A1C1A"
+    },
+    {
+      "name": "gb_panel",
+      "value": "#2B2F2B"
+    },
+    {
+      "name": "gb_accent",
+      "value": "#8BC34A"
+    },
+    {
+      "name": "gb_text",
+      "value": "#E8F0E0"
+    },
+    {
+      "name": "gb_btn_a",
+      "value": "#C1443C"
+    },
+    {
+      "name": "gb_btn_b",
+      "value": "#3C6EC1"
+    }
+  ]
+}
