@@ -28,7 +28,7 @@
   ],
   "targets": [
     {
-      "name": "default"
+      "name": "default",
     }
   ]
 }
