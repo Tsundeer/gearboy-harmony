@@ -1,9 +1,10 @@
 import emu from 'libgearboy.so';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { router } from '@kit.ArkUI';
+import { image } from '@kit.ImageKit';
 import { KeyCode } from '@kit.InputKit';
 
-// Virtual key codes understood by the native setKey()
+// Virtual key order understood by the native setKey()
 const KEY_UP = 0;
 const KEY_DOWN = 1;
 const KEY_LEFT = 2;
@@ -14,6 +15,8 @@ const KEY_SELECT = 6;
 const KEY_START = 7;
 const FRAME_INTERVAL_MS = 16;
 
+const GB_W = 160;
+const GB_H = 144;
 const ROM_PATH_SUFFIX = '/last_rom.gb';
 const SLOTS: number[] = [1, 2, 3];
 
@@ -25,34 +28,53 @@ struct Play {
   @State showMenu: boolean = true;
   @State slot: number = 1;
   private timerId: number = -1;
+  // RGBA8888 160x144 pixel map refreshed by the native core each frame
+  private screenPm: image.PixelMap | null = null;
+  private renderSettings: RenderingContextSettings = new RenderingContextSettings(true);
+  private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.renderSettings);
 
   aboutToAppear(): void {
     emu.setSaveDir(getContext(this).filesDir);
-    this.loadRomFromSandbox();
+    this.createScreenPm();
+    this.doLoadRom();
   }
 
   aboutToDisappear(): void {
     this.stopLoop();
   }
 
-  onBackPress(): boolean {
-    this.stopLoop();
-    return false; // let the system perform the default back navigation
+  private createScreenPm(): void {
+    const opts: image.InitializationOptions = {
+      size: { width: GB_W, height: GB_H },
+      srcPixelFormat: image.PixelMapFormat.RGBA_8888,
+      pixelFormat: image.PixelMapFormat.RGBA_8888
+    };
+    const blank = new ArrayBuffer(GB_W * GB_H * 4);
+    image.createPixelMap(blank, opts).then((pm: image.PixelMap) => {
+      this.screenPm = pm;
+    }).catch((err: BusinessError) => {
+      this.statusText = `PixelMap 创建失败: ${err.code}`;
+    });
   }
 
-  private loadRomFromSandbox(): void {
-    const romPath: string = getContext(this).filesDir + ROM_PATH_SUFFIX;
+  private doLoadRom(): void {
+    const p = getContext(this).filesDir + ROM_PATH_SUFFIX;
     try {
-      const stat = fs.statSync(romPath);
-      const file = fs.openSync(romPath, fs.OpenMode.READ_ONLY);
-      const buf = new ArrayBuffer(stat.size);
-      fs.readSync(file.fd, buf);
-      fs.closeSync(file);
-      this.romLoaded = emu.loadRom(buf, 'last_rom');
-      this.statusText = this.romLoaded ? '' : 'ROM 加载失败（文件不是有效的 .gb/.gbc？）';
+      if (!fs.accessSync(p)) {
+        this.statusText = '未找到 ROM，请返回首页导入';
+        return;
+      }
+      const f = fs.openSync(p, fs.OpenMode.READ_ONLY);
+      const st = fs.statSync(f.fd);
+      const ab = new ArrayBuffer(st.size);
+      fs.readSync(f.fd, ab);
+      fs.closeSync(f);
+      const ok: boolean = emu.loadRom(ab, 'rom');
+      this.romLoaded = ok;
+      this.statusText = ok ? 'ROM 已加载' : 'ROM 加载失败（核心拒绝）';
     } catch (err) {
-      this.romLoaded = false;
-      this.statusText = '读取沙箱 ROM 失败，请返回重新导入';
+      const e = err as BusinessError;
+      this.statusText = `ROM 读取失败: ${e.code}`;
     }
   }
 
@@ -61,7 +83,7 @@ struct Play {
       return;
     }
     this.timerId = setInterval(() => {
-      emu.runFrame();
+      this.tick();
     }, FRAME_INTERVAL_MS);
   }
 
@@ -72,9 +94,39 @@ struct Play {
     }
   }
 
-  // Maps an ArkUI key event (PC keyboard) to a Game Boy key; -1 = unmapped.
-  private mapKeyCode(keyCode: number): number {
-    switch (keyCode) {
+  private tick(): void {
+    emu.runFrame();
+    const pm = this.screenPm;
+    if (pm !== null) {
+      const ab: ArrayBuffer = emu.getFramePixels();
+      pm.writeBufferToPixelsSync(ab);
+      this.ctx.drawImage(pm, 0, 0, this.ctx.width, this.ctx.height);
+    }
+  }
+
+  private doReset(): void {
+    if (emu.reset()) {
+      this.statusText = '已重置';
+    }
+  }
+
+  private doSaveState(): void {
+    const ok: boolean = emu.saveState(this.slot);
+    this.statusText = ok ? `已写入存档槽 ${this.slot}` : `存档槽 ${this.slot} 写入失败`;
+  }
+
+  private doLoadState(): void {
+    const ok: boolean = emu.loadState(this.slot);
+    this.statusText = ok ? `已读取存档槽 ${this.slot}` : `存档槽 ${this.slot} 为空`;
+  }
+
+  private goBack(): void {
+    this.stopLoop();
+    router.back();
+  }
+
+  private mapKeyCode(code: number): number {
+    switch (code) {
       case KeyCode.KEYCODE_DPAD_UP:
         return KEY_UP;
       case KeyCode.KEYCODE_DPAD_DOWN:
@@ -89,7 +141,6 @@ struct Play {
         return KEY_B;
       case KeyCode.KEYCODE_ENTER:
         return KEY_START;
-      case KeyCode.KEYCODE_SHIFT_LEFT:
       case KeyCode.KEYCODE_SHIFT_RIGHT:
         return KEY_SELECT;
       default:
@@ -98,9 +149,6 @@ struct Play {
   }
 
   private handleKeyEvent(event: KeyEvent): void {
-    if (!this.romLoaded) {
-      return;
-    }
     const key = this.mapKeyCode(event.keyCode);
     if (key < 0) {
       return;
@@ -112,113 +160,74 @@ struct Play {
     }
   }
 
-  private doReset(): void {
-    if (this.romLoaded && emu.reset()) {
-      this.statusText = '已重置';
-    } else {
-      this.statusText = '重置失败';
-    }
-  }
-
-  private doSaveState(): void {
-    if (emu.saveState(this.slot)) {
-      this.statusText = `已写入存档 槽位 ${this.slot}`;
-    } else {
-      this.statusText = `写存档失败（槽位 ${this.slot}）`;
-    }
-  }
-
-  private doLoadState(): void {
-    if (emu.loadState(this.slot)) {
-      this.statusText = `已读取存档 槽位 ${this.slot}`;
-    } else {
-      this.statusText = `读存档失败：槽位 ${this.slot} 无存档`;
-    }
-  }
-
-  private goBack(): void {
-    this.stopLoop();
-    router.back();
+  @Builder
+  menuButton(label: string, action: () => void) {
+    Button(label)
+      .height(36)
+      .padding({ left: 12, right: 12 })
+      .fontSize(14)
+      .backgroundColor('#2B2F2B')
+      .fontColor('#E8F0E0')
+      .onClick(() => {
+        action();
+      })
   }
 
   @Builder
-  padButton(label: string, keyCode: number) {
+  padButton(label: string, key: number) {
     Text(label)
-      .fontSize(22)
-      .fontWeight(FontWeight.Bold)
-      .fontColor($r('app.color.gb_text'))
-      .textAlign(TextAlign.Center)
       .width(56)
       .height(56)
       .borderRadius(10)
-      .backgroundColor($r('app.color.gb_panel'))
-      .onTouch((event: TouchEvent) => {
-        if (!this.romLoaded) {
-          return;
-        }
-        if (event.type === TouchType.Down) {
-          emu.setKey(keyCode, true);
-        } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-          emu.setKey(keyCode, false);
+      .backgroundColor('#2B2F2B')
+      .fontColor('#E8F0E0')
+      .fontSize(20)
+      .textAlign(TextAlign.Center)
+      .onTouch((e: TouchEvent) => {
+        if (e.type === TouchType.Down) {
+          emu.setKey(key, true);
+        } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+          emu.setKey(key, false);
         }
       })
   }
 
   @Builder
-  actionButton(label: string, keyCode: number, bgColor: ResourceColor) {
+  actionButton(label: string, key: number, color: Resource) {
     Text(label)
-      .fontSize(26)
+      .width(62)
+      .height(62)
+      .borderRadius(31)
+      .backgroundColor(color)
+      .fontColor('#FFFFFF')
+      .fontSize(22)
       .fontWeight(FontWeight.Bold)
-      .fontColor($r('app.color.gb_text'))
       .textAlign(TextAlign.Center)
-      .width(76)
-      .height(76)
-      .borderRadius(38)
-      .backgroundColor(bgColor)
-      .onTouch((event: TouchEvent) => {
-        if (!this.romLoaded) {
-          return;
-        }
-        if (event.type === TouchType.Down) {
-          emu.setKey(keyCode, true);
-        } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-          emu.setKey(keyCode, false);
+      .onTouch((e: TouchEvent) => {
+        if (e.type === TouchType.Down) {
+          emu.setKey(key, true);
+        } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+          emu.setKey(key, false);
         }
       })
   }
 
   @Builder
-  pillButton(label: string, keyCode: number) {
+  pillButton(label: string, key: number) {
     Text(label)
-      .fontSize(14)
-      .fontWeight(FontWeight.Medium)
-      .fontColor($r('app.color.gb_text'))
-      .textAlign(TextAlign.Center)
       .width(84)
-      .height(34)
-      .borderRadius(17)
-      .backgroundColor($r('app.color.gb_panel'))
-      .onTouch((event: TouchEvent) => {
-        if (!this.romLoaded) {
-          return;
+      .height(30)
+      .borderRadius(15)
+      .backgroundColor('#2B2F2B')
+      .fontColor('#E8F0E0')
+      .fontSize(12)
+      .textAlign(TextAlign.Center)
+      .onTouch((e: TouchEvent) => {
+        if (e.type === TouchType.Down) {
+          emu.setKey(key, true);
+        } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+          emu.setKey(key, false);
         }
-        if (event.type === TouchType.Down) {
-          emu.setKey(keyCode, true);
-        } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-          emu.setKey(keyCode, false);
-        }
-      })
-  }
-
-  @Builder
-  menuButton(label: string, onTap: () => void) {
-    Button(label)
-      .height(36)
-      .fontSize(14)
-      .backgroundColor($r('app.color.gb_panel'))
-      .fontColor($r('app.color.gb_text'))
-      .onClick(() => {
-        onTap();
       })
   }
 
@@ -244,8 +253,8 @@ struct Play {
               .height(36)
               .width(36)
               .fontSize(14)
-              .backgroundColor(this.slot === s ? $r('app.color.gb_accent') : $r('app.color.gb_panel'))
-              .fontColor(this.slot === s ? $r('app.color.gb_dark') : $r('app.color.gb_text'))
+              .backgroundColor(this.slot === s ? '#8BC34A' : '#2B2F2B')
+              .fontColor(this.slot === s ? '#1A1C1A' : '#E8F0E0')
               .onClick(() => {
                 this.slot = s;
               })
@@ -262,23 +271,30 @@ struct Play {
       if (this.showMenu && this.statusText.length > 0) {
         Text(this.statusText)
           .fontSize(13)
-          .fontColor($r('app.color.gb_accent'))
+          .fontColor('#8BC34A')
           .width('100%')
           .textAlign(TextAlign.Center)
           .padding(2)
       }
 
-      // ---------- emulator screen ----------
-      XComponent({ id: 'gearboyScreen', type: 'surface', libraryname: 'gearboy' })
-        .width('96%')
-        .aspectRatio(160 / 144)
-        .backgroundColor(Color.Black)
-        .onLoad(() => {
-          this.startLoop();
-        })
-        .onDestroy(() => {
-          this.stopLoop();
-        })
+      // ---------- emulator screen (Canvas, not XComponent) ----------
+      Column() {
+        Canvas(this.ctx)
+          .height('100%')
+          .aspectRatio(GB_W / GB_H)
+          .backgroundColor(Color.Black)
+          .borderRadius(8)
+          .border({ width: 1, color: '#3A3F3A' })
+          .onReady(() => {
+            this.ctx.imageSmoothingEnabled = false;
+            this.startLoop();
+          })
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .padding({ top: 4, bottom: 8 })
 
       Blank()
 
@@ -298,7 +314,7 @@ struct Play {
               .width(56)
               .height(56)
               .borderRadius(10)
-              .backgroundColor($r('app.color.gb_dark'))
+              .backgroundColor('#1A1C1A')
             this.padButton('▶', KEY_RIGHT)
           }
           Row() {
@@ -330,7 +346,7 @@ struct Play {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.gb_dark'))
+    .backgroundColor('#1A1C1A')
     .focusable(true)
     .focusOnTouch(true)
     .onKeyEvent((event: KeyEvent) => {

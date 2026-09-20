@@ -67,38 +67,38 @@ struct Index {
       Text('Gearboy')
         .fontSize(42)
         .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.gb_accent'))
+        .fontColor('#8BC34A')
       Text('Game Boy / Game Boy Color 模拟器')
         .fontSize(16)
-        .fontColor($r('app.color.gb_text'))
+        .fontColor('#E8F0E0')
         .opacity(0.8)
 
       Column() {
         Text('屏幕 160x144')
           .fontSize(12)
-          .fontColor($r('app.color.gb_text'))
+          .fontColor('#E8F0E0')
           .opacity(0.4)
         Text('▲')
           .fontSize(72)
-          .fontColor($r('app.color.gb_accent'))
+          .fontColor('#8BC34A')
           .opacity(0.6)
         Text('No ROM loaded')
           .fontSize(14)
-          .fontColor($r('app.color.gb_text'))
+          .fontColor('#E8F0E0')
           .opacity(0.5)
       }
       .width('80%')
       .height('32%')
       .justifyContent(FlexAlign.Center)
       .borderRadius(12)
-      .backgroundColor($r('app.color.gb_panel'))
+      .backgroundColor('#2B2F2B')
 
       Button(this.importing ? '处理中...' : '导入 ROM (.gb / .gbc)')
         .width('60%')
         .height(48)
         .fontSize(18)
-        .backgroundColor($r('app.color.gb_accent'))
-        .fontColor($r('app.color.gb_dark'))
+        .backgroundColor('#8BC34A')
+        .fontColor('#1A1C1A')
         .enabled(!this.importing)
         .onClick(() => {
           this.importRom();
@@ -109,8 +109,8 @@ struct Index {
           .width('60%')
           .height(48)
           .fontSize(18)
-          .backgroundColor($r('app.color.gb_panel'))
-          .fontColor($r('app.color.gb_text'))
+          .backgroundColor('#2B2F2B')
+          .fontColor('#E8F0E0')
           .onClick(() => {
             this.startLastRom();
           })
@@ -118,13 +118,13 @@ struct Index {
 
       Text(this.statusText)
         .fontSize(13)
-        .fontColor($r('app.color.gb_text'))
+        .fontColor('#E8F0E0')
         .opacity(0.6)
         .textAlign(TextAlign.Center)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor($r('app.color.gb_dark'))
+    .backgroundColor('#1A1C1A')
   }
 }

@@ -141,12 +141,15 @@ std::string SaveStateFilePath(const std::string& base_name, int slot)
     return path;
 }
 
+static int blit_dbg = 0;
+static int blit_cnt = 0;
 // ---------------------------------------------------------------------------
 // Rendering: blit 160x144 RGB565 -> surface RGBA8888 (nearest neighbour)
 // ---------------------------------------------------------------------------
 
 void BlitFrame()
 {
+    if (!blit_dbg++ ) OH_LOG_Print(LOG_APP, LOG_INFO, 0xFF00, "GearboyDbg", "BlitFrame first call, window=%{public}p", g_state.window);
     OHNativeWindowBuffer* buffer = NULL;
     int fence_fd = -1;
 
@@ -207,6 +210,7 @@ void ConfigureWindowGeometry()
 
 void OnSurfaceCreatedCB(OH_NativeXComponent* component, void* window)
 {
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0xFF00, "GearboyDbg", "OnSurfaceCreated fired! window=%{public}p", window);
     (void)component;
     std::lock_guard<std::mutex> lock(g_mutex);
     g_state.window = (OHNativeWindow*)window;
@@ -383,6 +387,38 @@ napi_value RunFrame(napi_env env, napi_callback_info info)
     return UndefinedValue(env);
 }
 
+
+// getFramePixels(): ArrayBuffer (RGBA8888, 160*144*4 bytes)
+napi_value GetFramePixels(napi_env env, napi_callback_info info)
+{
+    (void)info;
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    const int PIXEL_COUNT = GAMEBOY_WIDTH * GAMEBOY_HEIGHT;
+    const int BYTE_COUNT = PIXEL_COUNT * 4;
+
+    napi_value ab;
+    void* data = NULL;
+    if (napi_create_arraybuffer(env, BYTE_COUNT, &data, &ab) != napi_ok)
+        return UndefinedValue(env);
+
+    if (g_state.core != NULL && g_state.rom_loaded)
+    {
+        // RGB565 → RGBA8888
+        const u16* src = g_state.frame_buffer;
+        uint8_t* dst = (uint8_t*)data;
+        for (int i = 0; i < PIXEL_COUNT; ++i)
+        {
+            u16 p = src[i];
+            dst[i*4+0] = (uint8_t)(((p >> 11) & 0x1F) << 3);
+            dst[i*4+1] = (uint8_t)(((p >> 5)  & 0x3F) << 2);
+            dst[i*4+2] = (uint8_t)((p & 0x1F) << 3);
+            dst[i*4+3] = 0xFF;
+        }
+    }
+    return ab;
+}
+
 // setKey(key: number, pressed: boolean): void
 napi_value SetKey(napi_env env, napi_callback_info info)
 {
@@ -515,6 +551,7 @@ napi_value Init(napi_env env, napi_value exports)
         {"reset", NULL, Reset, NULL, NULL, NULL, napi_default, NULL},
         {"setSaveDir", NULL, SetSaveDir, NULL, NULL, NULL, napi_default, NULL},
         {"isRomLoaded", NULL, IsRomLoaded, NULL, NULL, NULL, napi_default, NULL},
+        {"getFramePixels", NULL, GetFramePixels, NULL, NULL, NULL, napi_default, NULL},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
 
