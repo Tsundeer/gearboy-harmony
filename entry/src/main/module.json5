@@ -4,7 +4,7 @@
     "type": "entry",
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
-    "deviceTypes": ["2in1"],
+    "deviceTypes": ["default", "2in1"],
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
