@@ -2,8 +2,9 @@ import emu from 'libgearboy.so';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { router } from '@kit.ArkUI';
 import { image } from '@kit.ImageKit';
+import { audio } from '@kit.AudioKit';
 import { KeyCode } from '@kit.InputKit';
-import { getBool, getNum, setNum, touchGame, SET_PAD, SET_SHARP, SET_FF } from '../common/Lib';
+import { getBool, getNum, setNum, touchGame, SET_PAD, SET_SHARP, SET_FF, SET_SOUND } from '../common/Lib';
 
 // Virtual key order understood by the native setKey()
 const KEY_UP = 0;
@@ -38,6 +39,8 @@ struct Play {
   @State ff: number = 1;
   @State padVisible: boolean = true;
   @State sharp: boolean = false;
+  private soundOn: boolean = true;
+  private renderer: audio.AudioRenderer | null = null;
   private timerId: number = -1;
   private lastTime: number = 0;
   private gameId: string = '';
@@ -68,9 +71,14 @@ struct Play {
     this.ff = getNum(ctx, SET_FF, 1);
     this.padVisible = getBool(ctx, SET_PAD, true);
     this.sharp = getBool(ctx, SET_SHARP, false);
+    this.soundOn = getBool(ctx, SET_SOUND, true);
     emu.setSaveDir(ctx.filesDir);
     this.createScreenPm();
+    this.initAudio();
     this.doLoadRom();
+    if (this.romLoaded) {
+      emu.loadRam();
+    }
   }
 
   onPageShow(): void {
@@ -79,12 +87,61 @@ struct Play {
     this.ff = getNum(ctx, SET_FF, 1);
     this.padVisible = getBool(ctx, SET_PAD, true);
     this.sharp = getBool(ctx, SET_SHARP, false);
+    const wantSound = getBool(ctx, SET_SOUND, true);
+    if (wantSound && !this.soundOn) {
+      this.soundOn = true;
+      this.initAudio();
+    } else if (!wantSound) {
+      this.soundOn = false;
+    }
     this.ctx.imageSmoothingEnabled = !this.sharp;
   }
 
   aboutToDisappear(): void {
     this.stopLoop();
+    if (this.romLoaded) {
+      emu.saveRam();
+    }
     touchGame(getContext(this), this.gameId);
+    this.releaseAudio();
+  }
+
+  private initAudio(): void {
+    if (this.renderer !== null) {
+      return;
+    }
+    const opts: audio.AudioRendererOptions = {
+      streamInfo: {
+        samplingRate: audio.AudioSamplingRate.SAMPLE_RATE_44100,
+        channels: audio.AudioChannel.CHANNEL_1,
+        sampleFormat: audio.AudioSampleFormat.SAMPLE_FORMAT_S16LE,
+        encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
+      },
+      rendererInfo: {
+        usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
+        rendererFlags: 0
+      }
+    };
+    audio.createAudioRenderer(opts).then((r: audio.AudioRenderer) => {
+      this.renderer = r;
+      r.start().then(() => {
+        console.info('[gearboy] audio renderer started');
+      }).catch(() => {
+      });
+    }).catch((err: BusinessError) => {
+      console.info(`[gearboy] audio renderer failed: ${err.code}`);
+    });
+  }
+
+  private releaseAudio(): void {
+    const r = this.renderer;
+    if (r !== null) {
+      this.renderer = null;
+      r.stop().catch(() => {
+      });
+      r.release().catch(() => {
+      });
+    }
   }
 
   private createScreenPm(): void {
@@ -165,6 +222,15 @@ struct Play {
       pm.writeBufferToPixelsSync(ab);
       this.ctx.drawImage(pm, 0, 0, this.ctx.width, this.ctx.height);
     }
+    // 音频：快进时不写（缓冲会溢出拖慢画面），常速时每帧写一帧采样
+    if (this.soundOn && this.ff === 1 && this.renderer !== null) {
+      const sab: ArrayBuffer = emu.getAudioSamples();
+      if (sab.byteLength > 0) {
+        this.renderer.write(sab).then(() => {
+        }).catch(() => {
+        });
+      }
+    }
   }
 
   private cycleFf(): void {
@@ -190,7 +256,11 @@ struct Play {
   }
 
   private goBack(): void {
+    if (this.romLoaded) {
+      emu.saveRam();
+    }
     this.stopLoop();
+    this.releaseAudio();
     router.back();
   }
 
@@ -235,8 +305,8 @@ struct Play {
       .height(36)
       .padding({ left: 12, right: 12 })
       .fontSize(14)
-      .backgroundColor('#2B2F2B')
-      .fontColor('#E8F0E0')
+      .backgroundColor($r('app.color.gb_chip'))
+      .fontColor($r('app.color.gb_text'))
       .onClick(() => {
         action();
       })
@@ -248,8 +318,8 @@ struct Play {
       .width(56)
       .height(56)
       .borderRadius(10)
-      .backgroundColor('#2B2F2B')
-      .fontColor('#E8F0E0')
+      .backgroundColor($r('app.color.gb_chip'))
+      .fontColor($r('app.color.gb_text'))
       .fontSize(20)
       .textAlign(TextAlign.Center)
       .onTouch((e: TouchEvent) => {
@@ -287,8 +357,8 @@ struct Play {
       .width(84)
       .height(30)
       .borderRadius(15)
-      .backgroundColor('#2B2F2B')
-      .fontColor('#E8F0E0')
+      .backgroundColor($r('app.color.gb_chip'))
+      .fontColor($r('app.color.gb_text'))
       .fontSize(12)
       .textAlign(TextAlign.Center)
       .onTouch((e: TouchEvent) => {
@@ -325,8 +395,8 @@ struct Play {
               .height(36)
               .width(36)
               .fontSize(14)
-              .backgroundColor(this.slot === s ? '#8BC34A' : '#2B2F2B')
-              .fontColor(this.slot === s ? '#1A1C1A' : '#E8F0E0')
+              .backgroundColor(this.slot === s ? $r('app.color.gb_accent') : $r('app.color.gb_chip'))
+              .fontColor(this.slot === s ? $r('app.color.gb_bg') : $r('app.color.gb_text'))
               .onClick(() => {
                 this.slot = s;
               })
@@ -343,7 +413,7 @@ struct Play {
       if (this.showMenu && this.statusText.length > 0) {
         Text(this.statusText)
           .fontSize(13)
-          .fontColor('#8BC34A')
+          .fontColor($r('app.color.gb_accent'))
           .width('100%')
           .textAlign(TextAlign.Center)
           .padding(2)
@@ -356,7 +426,7 @@ struct Play {
           .aspectRatio(GB_W / GB_H)
           .backgroundColor(Color.Black)
           .borderRadius(8)
-          .border({ width: 1, color: '#3A3F3A' })
+          .border({ width: 1, color: $r('app.color.gb_border') })
           .onReady(() => {
             this.ctx.imageSmoothingEnabled = !this.sharp;
             this.startLoop();
@@ -384,7 +454,7 @@ struct Play {
                 .width(56)
                 .height(56)
                 .borderRadius(10)
-                .backgroundColor('#1A1C1A')
+                .backgroundColor($r('app.color.gb_bg'))
               this.padButton('▶', KEY_RIGHT)
             }
             Row() {
@@ -416,7 +486,7 @@ struct Play {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#1A1C1A')
+    .backgroundColor($r('app.color.gb_bg'))
     .focusable(true)
     .focusOnTouch(true)
     .onKeyEvent((event: KeyEvent) => {

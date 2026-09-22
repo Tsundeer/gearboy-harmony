@@ -14,6 +14,7 @@ export const SET_GUIDE = 'guide_seen';
 export const SET_PAD = 'pad_visible';
 export const SET_SHARP = 'pixel_sharp';
 export const SET_FF = 'ff_speed';
+export const SET_SOUND = 'sound_on';
 
 function prefsOf(ctx: common.Context): preferences.Preferences {
   return preferences.getPreferencesSync(ctx, { name: 'gb_cfg' });

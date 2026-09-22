@@ -2,51 +2,51 @@
   "color": [
     {
       "name": "start_window_background",
-      "value": "#F3F5F1"
-    },
-    {
-      "name": "gb_bg",
-      "value": "#F3F5F1"
-    },
-    {
-      "name": "gb_card",
-      "value": "#FFFFFF"
-    },
-    {
-      "name": "gb_chip",
-      "value": "#EBEEE6"
-    },
-    {
-      "name": "gb_text",
-      "value": "#1B1E1A"
-    },
-    {
-      "name": "gb_sub",
-      "value": "#6C7568"
-    },
-    {
-      "name": "gb_accent",
-      "value": "#689F38"
-    },
-    {
-      "name": "gb_on_accent",
-      "value": "#FFFFFF"
-    },
-    {
-      "name": "gb_border",
-      "value": "#DDE2D8"
-    },
-    {
-      "name": "gb_danger",
-      "value": "#D32F2F"
-    },
-    {
-      "name": "gb_dark",
       "value": "#141614"
     },
     {
-      "name": "gb_panel",
+      "name": "gb_bg",
+      "value": "#141614"
+    },
+    {
+      "name": "gb_card",
       "value": "#232723"
+    },
+    {
+      "name": "gb_chip",
+      "value": "#2B2F2B"
+    },
+    {
+      "name": "gb_text",
+      "value": "#E8F0E0"
+    },
+    {
+      "name": "gb_sub",
+      "value": "#7A857A"
+    },
+    {
+      "name": "gb_accent",
+      "value": "#8BC34A"
+    },
+    {
+      "name": "gb_on_accent",
+      "value": "#162016"
+    },
+    {
+      "name": "gb_border",
+      "value": "#3A3F3A"
+    },
+    {
+      "name": "gb_danger",
+      "value": "#F0625A"
+    },
+    {
+      "name": "gb_dark",
+      "value": "#1A1C1A"
+    },
+    {
+      "name": "gb_panel",
+      "value": "#2B2F2B"
     },
     {
       "name": "gb_accent_old",

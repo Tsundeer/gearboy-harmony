@@ -14,7 +14,14 @@ struct Index {
   @State games: GameItem[] = [];
   @State importing: boolean = false;
   @State statusText: string = '';
-  private palette: string[] = ['#8BC34A', '#4FC3F7', '#FFB74D', '#BA68C8', '#F06292', '#4DB6AC'];
+  private palette: Resource[] = [
+    $r('app.color.gb_accent'),
+    $r('app.color.gb_btn_b'),
+    $r('app.color.gb_btn_a'),
+    $r('app.color.gb_border'),
+    $r('app.color.gb_danger'),
+    $r('app.color.gb_sub')
+  ];
 
   aboutToAppear(): void {
     this.migrateLegacy();
@@ -57,7 +64,7 @@ struct Index {
     return arr;
   }
 
-  private colorOf(id: string): string {
+  private colorOf(id: string): Resource {
     let h = 0;
     for (let i = 0; i < id.length; i++) {
       h = (h * 31 + id.charCodeAt(i)) % 997;
@@ -84,7 +91,7 @@ struct Index {
       },
       secondaryButton: {
         value: '删除',
-        fontColor: '#F0625A',
+        fontColor: $r('app.color.gb_danger'),
         action: (): void => {
           this.games = removeGame(getContext(this), g.id);
           this.statusText = '已从游戏库移除';
@@ -150,7 +157,7 @@ struct Index {
       .height(size)
       .borderRadius(10)
       .backgroundColor(this.colorOf(g.id))
-      .fontColor('#162016')
+      .fontColor($r('app.color.gb_on_accent'))
       .fontSize(Math.round(size * 0.42))
       .fontWeight(FontWeight.Bold)
       .textAlign(TextAlign.Center)
@@ -164,10 +171,10 @@ struct Index {
           Text('Gearboy')
             .fontSize(26)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#8BC34A')
+            .fontColor($r('app.color.gb_accent'))
           Text('Game Boy · Game Boy Color 模拟器')
             .fontSize(12)
-            .fontColor('#7A857A')
+            .fontColor($r('app.color.gb_sub'))
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
@@ -176,8 +183,8 @@ struct Index {
           .width(40)
           .height(40)
           .borderRadius(20)
-          .backgroundColor('#232723')
-          .fontColor('#8BC34A')
+          .backgroundColor($r('app.color.gb_card'))
+          .fontColor($r('app.color.gb_accent'))
           .fontSize(18)
           .textAlign(TextAlign.Center)
           .onClick(() => {
@@ -187,8 +194,8 @@ struct Index {
           .width(40)
           .height(40)
           .borderRadius(20)
-          .backgroundColor('#232723')
-          .fontColor('#E8F0E0')
+          .backgroundColor($r('app.color.gb_card'))
+          .fontColor($r('app.color.gb_text'))
           .fontSize(17)
           .textAlign(TextAlign.Center)
           .onClick(() => {
@@ -205,18 +212,18 @@ struct Index {
           Text('还没有游戏')
             .fontSize(20)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#E8F0E0')
+            .fontColor($r('app.color.gb_text'))
           Text('导入一个 .gb 或 .gbc 文件\n开始你的第一局游戏')
             .fontSize(14)
-            .fontColor('#7A857A')
+            .fontColor($r('app.color.gb_sub'))
             .textAlign(TextAlign.Center)
             .lineHeight(22)
           Button(this.importing ? '处理中…' : '导入游戏')
             .width('46%')
             .height(46)
             .fontSize(17)
-            .backgroundColor('#8BC34A')
-            .fontColor('#162016')
+            .backgroundColor($r('app.color.gb_accent'))
+            .fontColor($r('app.color.gb_on_accent'))
             .margin({ top: 10 })
             .onClick(() => {
               this.importRom();
@@ -235,19 +242,19 @@ struct Index {
                 Column({ space: 4 }) {
                   Text(g.name)
                     .fontSize(16)
-                    .fontColor('#E8F0E0')
+                    .fontColor($r('app.color.gb_text'))
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                   Text(fmtLast(g.last))
                     .fontSize(12)
-                    .fontColor('#7A857A')
+                    .fontColor($r('app.color.gb_sub'))
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
 
                 Text('删除')
                   .fontSize(13)
-                  .fontColor('#F0625A')
+                  .fontColor($r('app.color.gb_danger'))
                   .padding(8)
                   .onClick(() => {
                     this.confirmRemove(g);
@@ -256,7 +263,7 @@ struct Index {
               .width('100%')
               .padding(12)
               .borderRadius(14)
-              .backgroundColor('#232723')
+              .backgroundColor($r('app.color.gb_card'))
               .onClick(() => {
                 this.playGame(g);
               })
@@ -274,8 +281,8 @@ struct Index {
           .width('86%')
           .height(48)
           .fontSize(17)
-          .backgroundColor('#8BC34A')
-          .fontColor('#162016')
+          .backgroundColor($r('app.color.gb_accent'))
+          .fontColor($r('app.color.gb_on_accent'))
           .margin({ top: 6, bottom: 24 })
           .onClick(() => {
             this.importRom();
@@ -284,12 +291,12 @@ struct Index {
       if (this.statusText.length > 0) {
         Text(this.statusText)
           .fontSize(12)
-          .fontColor('#7A857A')
+          .fontColor($r('app.color.gb_sub'))
           .padding({ bottom: 12 })
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#141614')
+    .backgroundColor($r('app.color.gb_bg'))
   }
 }

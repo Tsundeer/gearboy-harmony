@@ -18,10 +18,10 @@ struct Guide {
       Text(title)
         .fontSize(26)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#E8F0E0')
+        .fontColor($r('app.color.gb_text'))
       Text(desc)
         .fontSize(15)
-        .fontColor('#B9C4B3')
+        .fontColor($r('app.color.gb_sub'))
         .textAlign(TextAlign.Center)
         .lineHeight(26)
         .padding({ left: 24, right: 24 })
@@ -37,7 +37,7 @@ struct Guide {
         Blank()
         Text('跳过')
           .fontSize(14)
-          .fontColor('#8BC34A')
+          .fontColor($r('app.color.gb_accent'))
           .padding(14)
           .onClick(() => {
             this.finish();
@@ -57,8 +57,8 @@ struct Guide {
         .width('60%')
         .height(46)
         .fontSize(17)
-        .backgroundColor('#8BC34A')
-        .fontColor('#162016')
+        .backgroundColor($r('app.color.gb_accent'))
+        .fontColor($r('app.color.gb_on_accent'))
         .margin({ bottom: 40 })
         .onClick(() => {
           this.finish();
@@ -66,6 +66,6 @@ struct Guide {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#141614')
+    .backgroundColor($r('app.color.gb_bg'))
   }
 }

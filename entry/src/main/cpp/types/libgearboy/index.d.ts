@@ -11,3 +11,6 @@ export const reset: () => boolean;
 export const setSaveDir: (dir: string) => void;
 export const isRomLoaded: () => boolean;
 export const getFramePixels: () => ArrayBuffer;
+export const getAudioSamples: () => ArrayBuffer;
+export const saveRam: () => boolean;
+export const loadRam: () => boolean;

@@ -24,6 +24,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <fstream>
 
 #include "gearboy.h"
 
@@ -48,6 +49,7 @@ struct EmuState
     std::string save_dir;
     u16 frame_buffer[GAMEBOY_WIDTH * GAMEBOY_HEIGHT];
     s16 audio_buffer[AUDIO_BUFFER_SIZE];
+    int audio_samples;
     OHNativeWindow* window;
     uint32_t surface_width;
     uint32_t surface_height;
@@ -58,6 +60,7 @@ struct EmuState
     {
         memset(frame_buffer, 0, sizeof(frame_buffer));
         memset(audio_buffer, 0, sizeof(audio_buffer));
+        audio_samples = 0;
     }
 };
 
@@ -380,6 +383,7 @@ napi_value RunFrame(napi_env env, napi_callback_info info)
 
     int sample_count = 0;
     g_state.core->RunToVBlank(g_state.frame_buffer, g_state.audio_buffer, &sample_count);
+    g_state.audio_samples = sample_count;
 
     if (g_state.window != NULL)
         BlitFrame();
@@ -397,10 +401,24 @@ napi_value GetFramePixels(napi_env env, napi_callback_info info)
     const int PIXEL_COUNT = GAMEBOY_WIDTH * GAMEBOY_HEIGHT;
     const int BYTE_COUNT = PIXEL_COUNT * 4;
 
+    // Reuse one persistent ArrayBuffer across frames to avoid per-frame
+    // allocation churn (GC hiccups at 60 fps) in the ArkTS render loop.
+    static napi_ref frame_ref = NULL;
     napi_value ab;
     void* data = NULL;
-    if (napi_create_arraybuffer(env, BYTE_COUNT, &data, &ab) != napi_ok)
-        return UndefinedValue(env);
+    if (frame_ref == NULL)
+    {
+        if (napi_create_arraybuffer(env, BYTE_COUNT, &data, &ab) != napi_ok)
+            return UndefinedValue(env);
+        napi_create_reference(env, ab, 1, &frame_ref);
+    }
+    else
+    {
+        if (napi_get_reference_value(env, frame_ref, &ab) != napi_ok)
+            return UndefinedValue(env);
+        size_t len = 0;
+        napi_get_arraybuffer_info(env, ab, &data, &len);
+    }
 
     if (g_state.core != NULL && g_state.rom_loaded)
     {
@@ -417,6 +435,60 @@ napi_value GetFramePixels(napi_env env, napi_callback_info info)
         }
     }
     return ab;
+}
+
+// getAudioSamples(): ArrayBuffer (s16 mono @ GB_AUDIO_SAMPLE_RATE, one frame)
+napi_value GetAudioSamples(napi_env env, napi_callback_info info)
+{
+    (void)info;
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    int count = 0;
+    if (g_state.core != NULL && g_state.rom_loaded)
+        count = g_state.audio_samples;
+    if (count < 0)
+        count = 0;
+    if (count > AUDIO_BUFFER_SIZE)
+        count = AUDIO_BUFFER_SIZE;
+
+    napi_value ab;
+    void* data = NULL;
+    if (napi_create_arraybuffer(env, (size_t)count * sizeof(s16), &data, &ab) != napi_ok)
+        return UndefinedValue(env);
+    if (count > 0)
+        memcpy(data, g_state.audio_buffer, (size_t)count * sizeof(s16));
+    return ab;
+}
+
+// saveRam(): boolean — cartridge battery RAM (in-game saves), keyed by rom name
+napi_value SaveRamNapi(napi_env env, napi_callback_info info)
+{
+    (void)info;
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (!g_state.rom_loaded || g_state.core == NULL || g_state.save_dir.empty())
+        return BoolValue(env, false);
+    const std::string path = g_state.save_dir + "/" + g_state.rom_name + ".sav";
+    g_state.core->SaveRam(path.c_str(), true);
+    OH_LOG_Print(LOG_APP, LOG_INFO, GB_LOG_DOMAIN, GB_LOG_TAG, "saveRam -> %{public}s", path.c_str());
+    return BoolValue(env, true);
+}
+
+// loadRam(): boolean — restore cartridge battery RAM if a save exists
+napi_value LoadRamNapi(napi_env env, napi_callback_info info)
+{
+    (void)info;
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (!g_state.rom_loaded || g_state.core == NULL || g_state.save_dir.empty())
+        return BoolValue(env, false);
+    const std::string path = g_state.save_dir + "/" + g_state.rom_name + ".sav";
+    std::ifstream f(path.c_str());
+    bool exists = f.good();
+    f.close();
+    if (!exists)
+        return BoolValue(env, false);
+    g_state.core->LoadRam(path.c_str(), true);
+    OH_LOG_Print(LOG_APP, LOG_INFO, GB_LOG_DOMAIN, GB_LOG_TAG, "loadRam <- %{public}s", path.c_str());
+    return BoolValue(env, true);
 }
 
 // setKey(key: number, pressed: boolean): void
@@ -552,6 +624,9 @@ napi_value Init(napi_env env, napi_value exports)
         {"setSaveDir", NULL, SetSaveDir, NULL, NULL, NULL, napi_default, NULL},
         {"isRomLoaded", NULL, IsRomLoaded, NULL, NULL, NULL, napi_default, NULL},
         {"getFramePixels", NULL, GetFramePixels, NULL, NULL, NULL, napi_default, NULL},
+        {"getAudioSamples", NULL, GetAudioSamples, NULL, NULL, NULL, napi_default, NULL},
+        {"saveRam", NULL, SaveRamNapi, NULL, NULL, NULL, napi_default, NULL},
+        {"loadRam", NULL, LoadRamNapi, NULL, NULL, NULL, napi_default, NULL},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
 
