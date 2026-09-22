@@ -41,6 +41,9 @@ struct Play {
   @State sharp: boolean = false;
   private soundOn: boolean = true;
   private renderer: audio.AudioRenderer | null = null;
+  // write 的 Promise 是异步的：JS 侧若在 native 拷贝完成前失去缓冲引用，
+  // GC 可能回收它导致 SIGSEGV（见 gearsystem faultlog）。在途缓冲保留引用，写完再释放。
+  private audioPending: ArrayBuffer[] = [];
   private timerId: number = -1;
   private lastTime: number = 0;
   private gameId: string = '';
@@ -133,7 +136,15 @@ struct Play {
     });
   }
 
+
+  private dropPending(sab: ArrayBuffer): void {
+    const i = this.audioPending.indexOf(sab);
+    if (i >= 0) {
+      this.audioPending.splice(i, 1);
+    }
+  }
   private releaseAudio(): void {
+    this.audioPending = [];
     const r = this.renderer;
     if (r !== null) {
       this.renderer = null;
@@ -226,8 +237,12 @@ struct Play {
     if (this.soundOn && this.ff === 1 && this.renderer !== null) {
       const sab: ArrayBuffer = emu.getAudioSamples();
       if (sab.byteLength > 0) {
-        this.renderer.write(sab).then(() => {
-        }).catch(() => {
+        this.audioPending.push(sab);
+        const r = this.renderer;
+        r.write(sab).then((): void => {
+          this.dropPending(sab);
+        }).catch((): void => {
+          this.dropPending(sab);
         });
       }
     }
