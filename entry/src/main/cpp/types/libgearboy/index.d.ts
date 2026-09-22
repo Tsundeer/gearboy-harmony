@@ -10,3 +10,4 @@ export const loadState: (slot: number) => boolean;
 export const reset: () => boolean;
 export const setSaveDir: (dir: string) => void;
 export const isRomLoaded: () => boolean;
+export const getFramePixels: () => ArrayBuffer;

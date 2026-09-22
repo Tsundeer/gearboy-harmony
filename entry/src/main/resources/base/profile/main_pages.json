@@ -1,6 +1,8 @@
 {
   "src": [
     "pages/Index",
-    "pages/Play"
+    "pages/Play",
+    "pages/Guide",
+    "pages/Settings"
   ]
 }

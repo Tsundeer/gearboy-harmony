@@ -3,6 +3,7 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { router } from '@kit.ArkUI';
 import { image } from '@kit.ImageKit';
 import { KeyCode } from '@kit.InputKit';
+import { getBool, getNum, setNum, touchGame, SET_PAD, SET_SHARP, SET_FF } from '../common/Lib';
 
 // Virtual key order understood by the native setKey()
 const KEY_UP = 0;
@@ -13,12 +14,19 @@ const KEY_A = 4;
 const KEY_B = 5;
 const KEY_SELECT = 6;
 const KEY_START = 7;
-const FRAME_INTERVAL_MS = 16;
 
 const GB_W = 160;
 const GB_H = 144;
+const GB_FRAME_MS = 1000 / 59.7275;
+const FRAME_TICK_MS = 8;
 const ROM_PATH_SUFFIX = '/last_rom.gb';
 const SLOTS: number[] = [1, 2, 3];
+
+interface RouteParams {
+  file?: string;
+  name?: string;
+  id?: string;
+}
 
 @Entry
 @Component
@@ -27,20 +35,56 @@ struct Play {
   @State statusText: string = '';
   @State showMenu: boolean = true;
   @State slot: number = 1;
+  @State ff: number = 1;
+  @State padVisible: boolean = true;
+  @State sharp: boolean = false;
   private timerId: number = -1;
+  private lastTime: number = 0;
+  private gameId: string = '';
+  private romFile: string = '';
+  private romName: string = 'rom';
   // RGBA8888 160x144 pixel map refreshed by the native core each frame
   private screenPm: image.PixelMap | null = null;
   private renderSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.renderSettings);
 
   aboutToAppear(): void {
-    emu.setSaveDir(getContext(this).filesDir);
+    const ctx = getContext(this);
+    const p = router.getParams() as RouteParams;
+    if (p !== null && p !== undefined) {
+      if (p.file !== undefined && p.file.length > 0) {
+        this.romFile = p.file;
+      }
+      if (p.name !== undefined && p.name.length > 0) {
+        this.romName = p.name;
+      }
+      if (p.id !== undefined) {
+        this.gameId = p.id;
+      }
+    }
+    if (this.romFile.length === 0) {
+      this.romFile = ctx.filesDir + ROM_PATH_SUFFIX;
+    }
+    this.ff = getNum(ctx, SET_FF, 1);
+    this.padVisible = getBool(ctx, SET_PAD, true);
+    this.sharp = getBool(ctx, SET_SHARP, false);
+    emu.setSaveDir(ctx.filesDir);
     this.createScreenPm();
     this.doLoadRom();
   }
 
+  onPageShow(): void {
+    // 从设置页返回时重新应用显示偏好
+    const ctx = getContext(this);
+    this.ff = getNum(ctx, SET_FF, 1);
+    this.padVisible = getBool(ctx, SET_PAD, true);
+    this.sharp = getBool(ctx, SET_SHARP, false);
+    this.ctx.imageSmoothingEnabled = !this.sharp;
+  }
+
   aboutToDisappear(): void {
     this.stopLoop();
+    touchGame(getContext(this), this.gameId);
   }
 
   private createScreenPm(): void {
@@ -58,23 +102,22 @@ struct Play {
   }
 
   private doLoadRom(): void {
-    const p = getContext(this).filesDir + ROM_PATH_SUFFIX;
     try {
-      if (!fs.accessSync(p)) {
-        this.statusText = '未找到 ROM，请返回首页导入';
+      if (!fs.accessSync(this.romFile)) {
+        this.statusText = '未找到游戏文件，请返回首页重新导入';
         return;
       }
-      const f = fs.openSync(p, fs.OpenMode.READ_ONLY);
+      const f = fs.openSync(this.romFile, fs.OpenMode.READ_ONLY);
       const st = fs.statSync(f.fd);
       const ab = new ArrayBuffer(st.size);
       fs.readSync(f.fd, ab);
       fs.closeSync(f);
-      const ok: boolean = emu.loadRom(ab, 'rom');
+      const ok: boolean = emu.loadRom(ab, this.romName);
       this.romLoaded = ok;
-      this.statusText = ok ? 'ROM 已加载' : 'ROM 加载失败（核心拒绝）';
+      this.statusText = ok ? `${this.romName} · 已就绪` : '游戏加载失败（核心拒绝）';
     } catch (err) {
       const e = err as BusinessError;
-      this.statusText = `ROM 读取失败: ${e.code}`;
+      this.statusText = `游戏文件读取失败: ${e.code}`;
     }
   }
 
@@ -82,9 +125,10 @@ struct Play {
     if (this.timerId >= 0) {
       return;
     }
+    this.lastTime = 0;
     this.timerId = setInterval(() => {
       this.tick();
-    }, FRAME_INTERVAL_MS);
+    }, FRAME_TICK_MS);
   }
 
   private stopLoop(): void {
@@ -95,13 +139,38 @@ struct Play {
   }
 
   private tick(): void {
-    emu.runFrame();
+    // 时间戳追赶：定时器被系统节流时一次性补跑帧，保证游戏速度与真实时间一致
+    const now = Date.now();
+    if (this.lastTime === 0) {
+      this.lastTime = now;
+    }
+    let frames = Math.floor((now - this.lastTime) / GB_FRAME_MS);
+    if (frames < 1) {
+      return;
+    }
+    const cap = 2 + this.ff * 2;
+    if (frames > cap) {
+      frames = cap;
+    }
+    this.lastTime += frames * GB_FRAME_MS;
+    if (this.lastTime < now - 300) {
+      this.lastTime = now;
+    }
+    for (let i = 0; i < frames; i++) {
+      emu.runFrame();
+    }
     const pm = this.screenPm;
     if (pm !== null) {
       const ab: ArrayBuffer = emu.getFramePixels();
       pm.writeBufferToPixelsSync(ab);
       this.ctx.drawImage(pm, 0, 0, this.ctx.width, this.ctx.height);
     }
+  }
+
+  private cycleFf(): void {
+    this.ff = this.ff === 1 ? 2 : (this.ff === 2 ? 4 : 1);
+    setNum(getContext(this), SET_FF, this.ff);
+    this.statusText = this.ff === 1 ? '常速运行' : `快进 ${this.ff}×`;
   }
 
   private doReset(): void {
@@ -233,12 +302,15 @@ struct Play {
 
   build() {
     Column() {
-      // ---------- top menu bar ----------
+      // ---------- 顶部菜单栏 ----------
       Row({ space: 8 }) {
         this.menuButton(this.showMenu ? '收起' : '菜单', (): void => {
           this.showMenu = !this.showMenu;
         })
         if (this.showMenu) {
+          this.menuButton(this.ff === 1 ? '快进' : `${this.ff}×`, (): void => {
+            this.cycleFf();
+          })
           this.menuButton('重置', (): void => {
             this.doReset();
           })
@@ -260,7 +332,7 @@ struct Play {
               })
           }, (s: number) => s.toString())
           Blank()
-          this.menuButton('退回', (): void => {
+          this.menuButton('退出', (): void => {
             this.goBack();
           })
         }
@@ -277,7 +349,7 @@ struct Play {
           .padding(2)
       }
 
-      // ---------- emulator screen (Canvas, not XComponent) ----------
+      // ---------- 游戏画面（Canvas，非 XComponent） ----------
       Column() {
         Canvas(this.ctx)
           .height('100%')
@@ -286,7 +358,7 @@ struct Play {
           .borderRadius(8)
           .border({ width: 1, color: '#3A3F3A' })
           .onReady(() => {
-            this.ctx.imageSmoothingEnabled = false;
+            this.ctx.imageSmoothingEnabled = !this.sharp;
             this.startLoop();
           })
       }
@@ -296,53 +368,51 @@ struct Play {
       .alignItems(HorizontalAlign.Center)
       .padding({ top: 4, bottom: 8 })
 
-      Blank()
+      // ---------- 虚拟手柄 ----------
+      if (this.padVisible) {
+        Row() {
+          Column({ space: 6 }) {
+            Row() {
+              Blank()
+              this.padButton('▲', KEY_UP)
+              Blank()
+            }
+            .width(186)
+            Row({ space: 6 }) {
+              this.padButton('◀', KEY_LEFT)
+              Text('')
+                .width(56)
+                .height(56)
+                .borderRadius(10)
+                .backgroundColor('#1A1C1A')
+              this.padButton('▶', KEY_RIGHT)
+            }
+            Row() {
+              Blank()
+              this.padButton('▼', KEY_DOWN)
+              Blank()
+            }
+            .width(186)
+          }
 
-      // ---------- virtual gamepad ----------
-      Row() {
-        // D-pad
-        Column({ space: 6 }) {
-          Row() {
-            Blank()
-            this.padButton('▲', KEY_UP)
-            Blank()
+          Blank()
+
+          Column({ space: 10 }) {
+            Row({ space: 14 }) {
+              this.actionButton('B', KEY_B, $r('app.color.gb_btn_b'))
+              this.actionButton('A', KEY_A, $r('app.color.gb_btn_a'))
+            }
+            Row({ space: 14 }) {
+              this.pillButton('SELECT', KEY_SELECT)
+              this.pillButton('START', KEY_START)
+            }
+            .margin({ top: 8 })
           }
-          .width(186)
-          Row({ space: 6 }) {
-            this.padButton('◀', KEY_LEFT)
-            Text('')
-              .width(56)
-              .height(56)
-              .borderRadius(10)
-              .backgroundColor('#1A1C1A')
-            this.padButton('▶', KEY_RIGHT)
-          }
-          Row() {
-            Blank()
-            this.padButton('▼', KEY_DOWN)
-            Blank()
-          }
-          .width(186)
+          .alignItems(HorizontalAlign.End)
         }
-
-        Blank()
-
-        // A / B
-        Column({ space: 10 }) {
-          Row({ space: 14 }) {
-            this.actionButton('B', KEY_B, $r('app.color.gb_btn_b'))
-            this.actionButton('A', KEY_A, $r('app.color.gb_btn_a'))
-          }
-          Row({ space: 14 }) {
-            this.pillButton('SELECT', KEY_SELECT)
-            this.pillButton('START', KEY_START)
-          }
-          .margin({ top: 8 })
-        }
-        .alignItems(HorizontalAlign.End)
+        .width('100%')
+        .padding({ left: 16, right: 16, bottom: 18 })
       }
-      .width('100%')
-      .padding({ left: 16, right: 16, bottom: 18 })
     }
     .width('100%')
     .height('100%')
